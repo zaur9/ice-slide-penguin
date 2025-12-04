@@ -13,6 +13,7 @@ let rightPressed = false;
 
 // --- Snowflakes ---
 let snowflakes = [];
+let obstacles = [];
 let score = 0;
 
 // --- Controls ---
@@ -25,7 +26,7 @@ document.addEventListener("keyup", (e) => {
     if (e.key === "ArrowRight") rightPressed = false;
 });
 
-// --- Penguin Functions ---
+// --- Penguin ---
 function drawPenguin() {
     ctx.fillStyle = "black";
     ctx.beginPath();
@@ -47,11 +48,11 @@ function updatePenguin() {
     if (penguinX > canvas.width - 20) penguinX = canvas.width - 20;
 }
 
-// --- Snowflake Functions ---
+// --- Snowflakes ---
 function createSnowflake() {
     const x = Math.random() * canvas.width;
-    const size = Math.random() * 6 + 4; // 4–10 px
-    const speed = Math.random() * 2 + 1; // falling speed
+    const size = Math.random() * 6 + 4;
+    const speed = Math.random() * 2 + 1;
     snowflakes.push({ x, y: 0, size, speed });
 }
 
@@ -60,17 +61,19 @@ function updateSnowflakes() {
         const s = snowflakes[i];
         s.y += s.speed;
 
-        // remove if out of screen
-        if (s.y > canvas.height) {
-            snowflakes.splice(i, 1);
-        }
+        if (s.y > canvas.height) snowflakes.splice(i, 1);
 
-        // collision with penguin
         const dx = s.x - penguinX;
         const dy = s.y - penguinY;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (distance < s.size + 20) {
+        // collision with penguin
+        let hitObstacle = obstacles.some(o => 
+            penguinX + 20 > o.x && penguinX - 20 < o.x + o.width &&
+            penguinY + 20 > o.y && penguinY - 20 < o.y + o.height
+        );
+
+        if (distance < s.size + 20 && !hitObstacle) {
             snowflakes.splice(i, 1);
             score++;
         }
@@ -86,7 +89,28 @@ function drawSnowflakes() {
     });
 }
 
-// --- Score ---
+// --- Obstacles ---
+function createObstacle() {
+    const width = Math.random() * 50 + 20;
+    const height = 15;
+    const x = Math.random() * (canvas.width - width);
+    const y = 0;
+    const speed = 2;
+    obstacles.push({ x, y, width, height, speed });
+}
+
+function updateObstacles() {
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.y += o.speed;
+        if (o.y > canvas.height) obstacles.splice(i, 1);
+
+        ctx.fillStyle = "#00ffff"; // cyan ice block
+        ctx.fillRect(o.x, o.y, o.width, o.height);
+    }
+}
+
+// --- Score Display ---
 function drawScore() {
     ctx.fillStyle = "white";
     ctx.font = "20px Arial";
@@ -98,9 +122,11 @@ function gameLoop() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (Math.random() < 0.03) createSnowflake();
+    if (Math.random() < 0.01) createObstacle();
 
     updatePenguin();
     updateSnowflakes();
+    updateObstacles();
 
     drawSnowflakes();
     drawPenguin();
