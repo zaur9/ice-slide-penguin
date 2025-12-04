@@ -1,0 +1,12 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    background: linear-gradient(180deg, #0a1a2f, #00111a);
+    font-family: Arial, sans-serif;
+}
+
+#gameCanvas {
+    display: block;
+    margin: 0 auto;
+    background: #b3e5fc;
+}
