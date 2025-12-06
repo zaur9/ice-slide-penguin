@@ -1,232 +1,303 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Ice Slide Penguin</title>
-    <style>
-        body {
-            margin: 0;
-            background: #00111a;
-            color: white;
-            font-family: Arial, sans-serif;
-            text-align: center;
-        }
-        #gameCanvas {
-            display: block;
-            margin: 20px auto;
-            background: #00334d;
-            border: 3px solid #00eaff;
-        }
-        #connectButton {
-            margin-top: 15px;
-            padding: 10px 20px;
-            background-color: #00eaff;
-            border: none;
-            font-size: 18px;
-            color: #00111a;
-            cursor: pointer;
-            border-radius: 6px;
-            font-weight: bold;
-        }
-        #connectButton:hover {
-            background-color: #33f6ff;
-        }
-        #leaderboard {
-            margin-top: 20px;
-            font-size: 20px;
-        }
-    </style>
-
-    <!-- Ethers.js -->
-    <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.1/dist/ethers.umd.min.js"></script>
-
+  <meta charset="utf-8" />
+  <title>Ice Slide Penguin — Somnia</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{ margin:0; background:#00111a; color:#e6f7ff; font-family:Arial,Helvetica,sans-serif; display:flex; align-items:center; justify-content:center; height:100vh;}
+    .wrap{ width:420px; padding:16px; background:linear-gradient(180deg, rgba(10,18,30,0.95), rgba(2,8,12,0.9)); border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.6); }
+    h1{ margin:0 0 8px 0; font-size:20px; }
+    #gameCanvas{ display:block; margin:10px auto; background: linear-gradient(180deg,#044b6b,#002233); border-radius:8px; border:1px solid rgba(255,255,255,0.03); }
+    .row{ display:flex; gap:8px; align-items:center; }
+    button{ cursor:pointer; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.2); color:#e6f7ff; font-weight:600; }
+    .muted{ opacity:0.8; font-size:13px; }
+    #leaderboard{ margin-top:10px; max-height:200px; overflow:auto; background:rgba(255,255,255,0.02); padding:8px; border-radius:8px; font-size:14px; }
+    .lb-item{ display:flex; justify-content:space-between; padding:6px 8px; border-bottom:1px dashed rgba(255,255,255,0.02); }
+    .status{ margin-top:8px; font-size:13px; color:#bfefff; }
+  </style>
 </head>
 <body>
+  <div class="wrap">
+    <h1>❄️ Ice Slide Penguin</h1>
 
-    <h1>❄️ Ice Slide Penguin ❄️</h1>
-
-    <button id="connectButton">Connect Wallet</button>
+    <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+      <div class="muted">Score: <span id="scoreDisplay">0</span></div>
+      <div id="walletAddr" class="muted">Not connected</div>
+    </div>
 
     <canvas id="gameCanvas" width="400" height="600"></canvas>
 
-    <h2>🏆 Leaderboard</h2>
-    <div id="leaderboard">Loading...</div>
+    <div style="display:flex; gap:8px; margin-top:8px; justify-content:space-between;">
+      <div class="row">
+        <button id="startBtn">Start</button>
+        <button id="pauseBtn">Pause (P)</button>
+      </div>
+      <div class="row">
+        <button id="connectBtn">Connect Wallet</button>
+        <button id="openLbBtn">Leaderboard</button>
+      </div>
+    </div>
 
-<script>
-/* ------------------------ SMART CONTRACT SETUP ------------------------ */
+    <div id="leaderboard" style="display:none;"></div>
+    <div id="status" class="status"></div>
+  </div>
 
-const CONTRACT_ADDRESS = "0x446387559087C3A2f9766612BEE2626f37D2AD1A";
+  <!-- Ethers v5 (UMD) — совместимая и проверенная -->
+  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
 
-const ABI = [
-    {
-        "inputs":[{"internalType":"uint256","name":"score","type":"uint256"}],
-        "name":"submitScore",
-        "outputs":[],
-        "stateMutability":"nonpayable",
-        "type":"function"
-    },
-    {
-        "inputs":[],
-        "name":"getLeaderboard",
-        "outputs":[{"components":[{"internalType":"address","name":"player","type":"address"},{"internalType":"uint256","name":"value","type":"uint256"}],"internalType":"struct Leaderboard.Score[10]","type":"tuple[10]"}],
-        "stateMutability":"view",
-        "type":"function"
+  <script>
+  /********** CONFIG **********/
+  const CONTRACT_ADDRESS = "0x446387559087C3A2f9766612BEE2626f37D2AD1A";
+  const ABI = [
+    "function submitScore(uint256 score) external",
+    "function getLeaderboard() external view returns (tuple(address player,uint256 value)[10])"
+  ];
+
+  /********** UI **********/
+  const connectBtn = document.getElementById('connectBtn');
+  const walletAddr = document.getElementById('walletAddr');
+  const openLbBtn = document.getElementById('openLbBtn');
+  const leaderboardEl = document.getElementById('leaderboard');
+  const statusEl = document.getElementById('status');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+
+  /********** WEB3 **********/
+  let provider = null;
+  let signer = null;
+  let contract = null;
+  let userAddress = null;
+
+  async function connectWallet() {
+    try {
+      if (!window.ethereum) throw new Error("MetaMask (or compatible) not found");
+      provider = new ethers.providers.Web3Provider(window.ethereum);
+      await provider.send("eth_requestAccounts", []);
+      signer = provider.getSigner();
+      userAddress = await signer.getAddress();
+      walletAddr.textContent = userAddress.slice(0,6) + "…" + userAddress.slice(-4);
+      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      status("Wallet connected");
+      await loadLeaderboard(); // preload
+    } catch (err) {
+      console.error("connect error", err);
+      status("Connect failed: " + (err && err.message ? err.message : err));
+      alert("Wallet connection failed: " + (err && err.message ? err.message : err));
     }
-];
+  }
 
-let provider;
-let signer;
-let contract;
+  connectBtn.addEventListener('click', connectWallet);
 
-/* Connect Wallet */
-document.getElementById("connectButton").onclick = async () => {
-    if (!window.ethereum) {
-        alert("Please install MetaMask!");
+  async function loadLeaderboard() {
+    try {
+      status("Loading leaderboard...");
+      // read-only provider: use provider if available, else create JsonRpcProvider fallback (we try window.ethereum)
+      let readProvider = provider;
+      if (!readProvider && window.ethereum) readProvider = new ethers.providers.Web3Provider(window.ethereum);
+      if (!readProvider) {
+        // no provider at all — still try to call contract via no-signer (this will likely fail without provider)
+        status("No provider for reading leaderboard");
         return;
-    }
-
-    try {
-        provider = new ethers.BrowserProvider(window.ethereum);
-        await provider.send("eth_requestAccounts", []);
-        signer = await provider.getSigner();
-        contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-
-        alert("Wallet connected!");
-        loadLeaderboard();
+      }
+      const readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, readProvider);
+      const res = await readContract.getLeaderboard();
+      // res is array of tuples { player, value }
+      renderLeaderboard(res);
+      status("Leaderboard loaded");
     } catch (err) {
-        console.error(err);
-        alert("Wallet connection failed: " + err.message);
+      console.error("loadLeaderboard err", err);
+      status("Failed loading leaderboard: " + (err && err.message ? err.message : err));
     }
-};
+  }
 
-/* Load Leaderboard */
-async function loadLeaderboard() {
-    if (!contract) return;
+  function renderLeaderboard(arr) {
+    leaderboardEl.style.display = "block";
+    leaderboardEl.innerHTML = "";
+    for (let i = 0; i < arr.length; i++) {
+      const entry = arr[i];
+      const addr = entry.player;
+      const valBN = entry.value;
+      const val = (valBN && valBN.toString) ? valBN.toString() : String(valBN);
+      const displayAddr = (addr === "0x0000000000000000000000000000000000000000") ? "—" : (addr.slice(0,6) + "…" + addr.slice(-4));
+      leaderboardEl.innerHTML += `<div class="lb-item"><div>${i+1}. ${displayAddr}</div><div>${val}</div></div>`;
+    }
+  }
 
+  openLbBtn.addEventListener('click', async () => {
+    await loadLeaderboard();
+    // toggle display
+    leaderboardEl.style.display = leaderboardEl.style.display === "block" ? "none" : "block";
+  });
+
+  async function submitScoreOnChain(score) {
     try {
-        const data = await contract.getLeaderboard();
-        let html = "";
-
-        for (let i = 0; i < data.length; i++) {
-            html += `${i + 1}. ${data[i].player} — ${data[i].value}<br>`;
-        }
-
-        document.getElementById("leaderboard").innerHTML = html;
+      if (!contract) {
+        await connectWallet();
+        if (!contract) return;
+      }
+      status("Sending transaction to submit score...");
+      const tx = await contract.submitScore(ethers.BigNumber.from(String(score)));
+      status("Transaction sent, waiting confirmation...");
+      await tx.wait();
+      status("Score submitted — updating leaderboard...");
+      await loadLeaderboard();
+      status("Done.");
     } catch (err) {
-        console.error(err);
+      console.error("submit error", err);
+      status("Submit failed: " + (err && err.message ? err.message : err));
+      alert("Submit failed: " + (err && err.message ? err.message : err));
     }
-}
+  }
 
-/* Submit Score */
-async function saveScore(score) {
-    if (!contract) {
-        alert("Connect wallet first!");
+  function status(text){
+    statusEl.textContent = text || "";
+  }
+
+  /********** SIMPLE GAME **********/
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width; const H = canvas.height;
+
+  let penguinX = W/2, penguinY = 500, penguinR = 20;
+  let left=false, right=false;
+  let snowflakes = [], obstacles = [];
+  let gameRunning = false;
+  let gamePaused = false;
+  let score = 0;
+  scoreDisplay.textContent = "0";
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === "ArrowLeft") left = true;
+    if (e.key === "ArrowRight") right = true;
+    if (e.key === "p" || e.key === "P") togglePause();
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.key === "ArrowLeft") left = false;
+    if (e.key === "ArrowRight") right = false;
+  });
+
+  startBtn.addEventListener('click', () => {
+    startGame();
+  });
+  pauseBtn.addEventListener('click', () => {
+    togglePause();
+  });
+
+  function startGame(){
+    penguinX = W/2; score = 0; snowflakes = []; obstacles = []; gameRunning = true; gamePaused = false; scoreDisplay.textContent = "0"; status("");
+    requestAnimationFrame(loop);
+  }
+  function togglePause(){
+    if(!gameRunning) return;
+    gamePaused = !gamePaused;
+    pauseBtn.textContent = gamePaused ? "Resume (P)" : "Pause (P)";
+    if(!gamePaused) requestAnimationFrame(loop);
+  }
+
+  function spawnSnow(){
+    snowflakes.push({ x: Math.random()*(W-10)+5, y:-10, r: Math.random()*5+3, spd: Math.random()*2+1 });
+  }
+  function spawnObs(){
+    const w = Math.random()*60+30;
+    obstacles.push({ x: Math.random()*(W-w), y:-20, w: w, h:14, spd: 2+Math.random()*1.5 });
+  }
+
+  setInterval(()=> { if(gameRunning && !gamePaused) if(Math.random()<0.04) spawnSnow(); }, 400);
+  setInterval(()=> { if(gameRunning && !gamePaused) if(Math.random()<0.02) spawnObs(); }, 500);
+
+  function loop(){
+    if(!gameRunning || gamePaused) return;
+    update();
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function update(){
+    // movement
+    if(left) penguinX -= 5;
+    if(right) penguinX += 5;
+    penguinX = Math.max(penguinR, Math.min(W-penguinR, penguinX));
+
+    // update snow
+    for(let i=snowflakes.length-1;i>=0;i--){
+      const s = snowflakes[i];
+      s.y += s.spd;
+      // collision
+      const dx = s.x - penguinX, dy = s.y - penguinY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const touchingObstacle = obstacles.some(o => circleRectCollision(penguinX, penguinY, penguinR, o.x, o.y, o.w, o.h));
+      if(dist < s.r + penguinR && !touchingObstacle){
+        snowflakes.splice(i,1);
+        score++;
+        scoreDisplay.textContent = String(score);
+      } else if (s.y > H+20) snowflakes.splice(i,1);
+    }
+
+    // update obstacles
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o = obstacles[i];
+      o.y += o.spd;
+      if(circleRectCollision(penguinX, penguinY, penguinR, o.x, o.y, o.w, o.h)){
+        // game over
+        gameRunning = false;
+        status("Game Over. Your score: " + score + ". Submitting...");
+        // try submit score on-chain (ask user to connect if needed)
+        setTimeout(()=> submitScoreOnChain(score), 200); // small delay so user sees message
         return;
+      }
+      if(o.y > H+40) obstacles.splice(i,1);
     }
+  }
 
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    // background subtle
+    ctx.fillStyle = '#00334d'; ctx.fillRect(0,0,W,H);
+
+    // snowflakes
+    ctx.fillStyle = '#ffffff';
+    for(const s of snowflakes){ ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); }
+
+    // obstacles
+    for(const o of obstacles){ ctx.fillStyle = '#00eaff'; ctx.fillRect(o.x, o.y, o.w, o.h); }
+
+    // penguin (simple)
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(penguinX, penguinY, penguinR, penguinR+6, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(penguinX, penguinY+5, penguinR*0.6, penguinR*0.5, 0, 0, Math.PI*2); ctx.fill();
+    // eyes
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6, 4,0,Math.PI*2); ctx.arc(penguinX+6, penguinY-6, 4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6,2,0,Math.PI*2); ctx.arc(penguinX+6, penguinY-6,2,0,Math.PI*2); ctx.fill();
+  }
+
+  // helper collision
+  function circleRectCollision(cx, cy, r, rx, ry, rw, rh){
+    const closestX = Math.max(rx, Math.min(cx, rx+rw));
+    const closestY = Math.max(ry, Math.min(cy, ry+rh));
+    const dx = cx - closestX; const dy = cy - closestY;
+    return (dx*dx + dy*dy) < (r*r);
+  }
+
+  // initial render
+  (function init(){
+    draw();
+    status("Press Start to play. Use ← →. Press Connect Wallet to submit score.");
+  })();
+
+  // Auto attempt to show leaderboard if contract is public-readable (no wallet)
+  (async function tryAutoLoadLB(){
     try {
-        const tx = await contract.submitScore(score);
-        await tx.wait();
-        loadLeaderboard();
-    } catch (err) {
-        console.error(err);
-        alert("Failed to submit score: " + err.message);
-    }
-}
+      // try using window.ethereum silently
+      if(window.ethereum){
+        const tempProvider = new ethers.providers.Web3Provider(window.ethereum);
+        const tempContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, tempProvider);
+        const res = await tempContract.getLeaderboard();
+        renderLeaderboard(res);
+      }
+    } catch(e){}
+  })();
 
-/* ------------------------ GAME LOGIC ------------------------ */
-
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-
-let penguin = { x: 180, y: 500, size: 40 };
-let obstacles = [];
-let snowflakes = [];
-let score = 0;
-let gameOver = false;
-
-document.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowLeft") penguin.x -= 20;
-    if (e.key === "ArrowRight") penguin.x += 20;
-});
-
-function spawnObstacle() {
-    obstacles.push({ x: Math.random() * 360, y: -50, size: 40 });
-}
-
-function spawnSnowflake() {
-    snowflakes.push({ x: Math.random() * 360, y: -30, size: 30 });
-}
-
-setInterval(spawnObstacle, 1200);
-setInterval(spawnSnowflake, 900);
-
-function draw() {
-    if (gameOver) return;
-
-    ctx.clearRect(0, 0, 400, 600);
-
-    // Penguin
-    ctx.fillStyle = "white";
-    ctx.beginPath();
-    ctx.arc(penguin.x, penguin.y, penguin.size, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Obstacles
-    ctx.fillStyle = "red";
-    obstacles.forEach((o) => {
-        o.y += 4;
-        ctx.fillRect(o.x, o.y, o.size, o.size);
-
-        if (
-            o.x < penguin.x + penguin.size &&
-            o.x + o.size > penguin.x - penguin.size &&
-            o.y < penguin.y + penguin.size &&
-            o.y + o.size > penguin.y - penguin.size
-        ) {
-            endGame();
-        }
-    });
-
-    // Snowflakes
-    ctx.fillStyle = "cyan";
-    snowflakes.forEach((s, index) => {
-        s.y += 3;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.size / 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        if (
-            s.x < penguin.x + penguin.size &&
-            s.x + s.size > penguin.x - penguin.size &&
-            s.y < penguin.y + penguin.size &&
-            s.y + s.size > penguin.y - penguin.size
-        ) {
-            score++;
-            snowflakes.splice(index, 1);
-        }
-    });
-
-    // Score
-    ctx.fillStyle = "white";
-    ctx.font = "22px Arial";
-    ctx.fillText("Score: " + score, 10, 30);
-
-    requestAnimationFrame(draw);
-}
-
-function endGame() {
-    gameOver = true;
-    ctx.fillStyle = "yellow";
-    ctx.font = "28px Arial";
-    ctx.fillText("GAME OVER!", 120, 250);
-    ctx.fillText("Score: " + score, 150, 300);
-
-    saveScore(score);
-}
-
-draw();
-
-</script>
+  </script>
 </body>
 </html>
