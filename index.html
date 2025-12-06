@@ -2,229 +2,188 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Ice Slide Penguin — Somnia</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Ice Slide Penguin — Demo</title>
   <style>
-    body{ margin:0; background:#00111a; color:#e6f7ff; font-family:Arial,Helvetica,sans-serif; display:flex; align-items:center; justify-content:center; height:100vh;}
-    .wrap{ width:420px; padding:16px; background:linear-gradient(180deg, rgba(10,18,30,0.95), rgba(2,8,12,0.9)); border-radius:12px; box-shadow:0 12px 40px rgba(0,0,0,0.6); }
-    h1{ margin:0 0 8px 0; font-size:20px; }
-    #gameCanvas{ display:block; margin:10px auto; background: linear-gradient(180deg,#044b6b,#002233); border-radius:8px; border:1px solid rgba(255,255,255,0.03); }
-    .row{ display:flex; gap:8px; align-items:center; }
-    button{ cursor:pointer; padding:8px 10px; border-radius:8px; border:1px solid rgba(255,255,255,0.05); background:rgba(0,0,0,0.2); color:#e6f7ff; font-weight:600; }
-    .muted{ opacity:0.8; font-size:13px; }
-    #leaderboard{ margin-top:10px; max-height:200px; overflow:auto; background:rgba(255,255,255,0.02); padding:8px; border-radius:8px; font-size:14px; }
-    .lb-item{ display:flex; justify-content:space-between; padding:6px 8px; border-bottom:1px dashed rgba(255,255,255,0.02); }
-    .status{ margin-top:8px; font-size:13px; color:#bfefff; }
+    :root{
+      --bg1:#071526; --bg2:#00111a; --neon:#6ff3ff;
+    }
+    html,body{height:100%;margin:0;font-family:Inter, Arial, sans-serif;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:#e6f7ff;}
+    .wrap{display:flex;align-items:center;justify-content:center;height:100%;padding:20px;box-sizing:border-box;}
+    .card{width:420px;max-width:95vw;padding:16px;border-radius:12px;background:linear-gradient(180deg,rgba(8,16,30,0.9),rgba(2,8,12,0.7));box-shadow:0 12px 40px rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.02);}
+    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+    .title{font-weight:700;font-size:18px;}
+    #gameCanvas{display:block;margin:0 auto;border-radius:8px;background:linear-gradient(180deg,#08354a,#002033);box-shadow:inset 0 6px 20px rgba(0,0,0,0.4);width:400px;height:600px;border:1px solid rgba(255,255,255,0.02);}
+    .hud{display:flex;justify-content:space-between;align-items:center;margin-top:12px;}
+    .btn{padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:var(--neon);cursor:pointer;font-weight:700;}
+    .btn.secondary{color:#fff;border-color:rgba(255,255,255,0.06);}
+    .muted{opacity:0.85;font-size:13px;}
+    .overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.6);z-index:40;}
+    .modal{background:rgba(6,12,20,0.95);padding:18px;border-radius:12px;width:360px;max-width:92vw;border:1px solid rgba(255,255,255,0.03);}
+    .center{text-align:center;}
+    .small{font-size:13px;color:rgba(255,255,255,0.85);}
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>❄️ Ice Slide Penguin</h1>
+    <div class="card">
+      <header>
+        <div class="title">❄️ Ice Slide Penguin</div>
+        <div class="muted small">Use ← → • P to Pause</div>
+      </header>
 
-    <div class="row" style="justify-content:space-between; margin-bottom:8px;">
-      <div class="muted">Score: <span id="scoreDisplay">0</span></div>
-      <div id="walletAddr" class="muted">Not connected</div>
-    </div>
+      <canvas id="gameCanvas" width="400" height="600"></canvas>
 
-    <canvas id="gameCanvas" width="400" height="600"></canvas>
-
-    <div style="display:flex; gap:8px; margin-top:8px; justify-content:space-between;">
-      <div class="row">
-        <button id="startBtn">Start</button>
-        <button id="pauseBtn">Pause (P)</button>
+      <div class="hud">
+        <div class="muted small">Score: <strong id="scoreDisplay">0</strong></div>
+        <div style="display:flex;gap:8px;">
+          <button id="startBtn" class="btn">Start</button>
+          <button id="pauseBtn" class="btn secondary">Pause (P)</button>
+        </div>
       </div>
-      <div class="row">
-        <button id="connectBtn">Connect Wallet</button>
-        <button id="openLbBtn">Leaderboard</button>
-      </div>
-    </div>
 
-    <div id="leaderboard" style="display:none;"></div>
-    <div id="status" class="status"></div>
+      <div style="margin-top:10px" class="muted small center">This is the local demo build — Web3 / leaderboard will be added after this works.</div>
+    </div>
   </div>
 
-  <!-- Ethers v5 (UMD) — совместимая и проверенная -->
-  <script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.min.js"></script>
-
+  <!-- Game script (standalone, no external libs) -->
   <script>
-  /********** CONFIG **********/
-  const CONTRACT_ADDRESS = "0x446387559087C3A2f9766612BEE2626f37D2AD1A";
-  const ABI = [
-    "function submitScore(uint256 score) external",
-    "function getLeaderboard() external view returns (tuple(address player,uint256 value)[10])"
-  ];
-
-  /********** UI **********/
-  const connectBtn = document.getElementById('connectBtn');
-  const walletAddr = document.getElementById('walletAddr');
-  const openLbBtn = document.getElementById('openLbBtn');
-  const leaderboardEl = document.getElementById('leaderboard');
-  const statusEl = document.getElementById('status');
-  const scoreDisplay = document.getElementById('scoreDisplay');
-  const startBtn = document.getElementById('startBtn');
-  const pauseBtn = document.getElementById('pauseBtn');
-
-  /********** WEB3 **********/
-  let provider = null;
-  let signer = null;
-  let contract = null;
-  let userAddress = null;
-
-  async function connectWallet() {
-    try {
-      if (!window.ethereum) throw new Error("MetaMask (or compatible) not found");
-      provider = new ethers.providers.Web3Provider(window.ethereum);
-      await provider.send("eth_requestAccounts", []);
-      signer = provider.getSigner();
-      userAddress = await signer.getAddress();
-      walletAddr.textContent = userAddress.slice(0,6) + "…" + userAddress.slice(-4);
-      contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-      status("Wallet connected");
-      await loadLeaderboard(); // preload
-    } catch (err) {
-      console.error("connect error", err);
-      status("Connect failed: " + (err && err.message ? err.message : err));
-      alert("Wallet connection failed: " + (err && err.message ? err.message : err));
-    }
-  }
-
-  connectBtn.addEventListener('click', connectWallet);
-
-  async function loadLeaderboard() {
-    try {
-      status("Loading leaderboard...");
-      // read-only provider: use provider if available, else create JsonRpcProvider fallback (we try window.ethereum)
-      let readProvider = provider;
-      if (!readProvider && window.ethereum) readProvider = new ethers.providers.Web3Provider(window.ethereum);
-      if (!readProvider) {
-        // no provider at all — still try to call contract via no-signer (this will likely fail without provider)
-        status("No provider for reading leaderboard");
-        return;
-      }
-      const readContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, readProvider);
-      const res = await readContract.getLeaderboard();
-      // res is array of tuples { player, value }
-      renderLeaderboard(res);
-      status("Leaderboard loaded");
-    } catch (err) {
-      console.error("loadLeaderboard err", err);
-      status("Failed loading leaderboard: " + (err && err.message ? err.message : err));
-    }
-  }
-
-  function renderLeaderboard(arr) {
-    leaderboardEl.style.display = "block";
-    leaderboardEl.innerHTML = "";
-    for (let i = 0; i < arr.length; i++) {
-      const entry = arr[i];
-      const addr = entry.player;
-      const valBN = entry.value;
-      const val = (valBN && valBN.toString) ? valBN.toString() : String(valBN);
-      const displayAddr = (addr === "0x0000000000000000000000000000000000000000") ? "—" : (addr.slice(0,6) + "…" + addr.slice(-4));
-      leaderboardEl.innerHTML += `<div class="lb-item"><div>${i+1}. ${displayAddr}</div><div>${val}</div></div>`;
-    }
-  }
-
-  openLbBtn.addEventListener('click', async () => {
-    await loadLeaderboard();
-    // toggle display
-    leaderboardEl.style.display = leaderboardEl.style.display === "block" ? "none" : "block";
-  });
-
-  async function submitScoreOnChain(score) {
-    try {
-      if (!contract) {
-        await connectWallet();
-        if (!contract) return;
-      }
-      status("Sending transaction to submit score...");
-      const tx = await contract.submitScore(ethers.BigNumber.from(String(score)));
-      status("Transaction sent, waiting confirmation...");
-      await tx.wait();
-      status("Score submitted — updating leaderboard...");
-      await loadLeaderboard();
-      status("Done.");
-    } catch (err) {
-      console.error("submit error", err);
-      status("Submit failed: " + (err && err.message ? err.message : err));
-      alert("Submit failed: " + (err && err.message ? err.message : err));
-    }
-  }
-
-  function status(text){
-    statusEl.textContent = text || "";
-  }
-
-  /********** SIMPLE GAME **********/
+  // ---------- Basic variables ----------
   const canvas = document.getElementById('gameCanvas');
   const ctx = canvas.getContext('2d');
-  const W = canvas.width; const H = canvas.height;
+  const W = canvas.width, H = canvas.height;
 
-  let penguinX = W/2, penguinY = 500, penguinR = 20;
-  let left=false, right=false;
-  let snowflakes = [], obstacles = [];
-  let gameRunning = false;
-  let gamePaused = false;
+  // UI
+  const startBtn = document.getElementById('startBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+
+  // Game states
+  const STATE = { MENU:0, PLAYING:1, PAUSED:2, GAMEOVER:3 };
+  let gameState = STATE.MENU;
+
+  // Player
+  let penguinX = W/2;
+  const penguinY = 500;
+  const penguinR = 20;
+  let leftPressed=false, rightPressed=false;
+  let speed = 5;
+
+  // Entities
+  let snowflakes = [];
+  let obstacles = [];
   let score = 0;
-  scoreDisplay.textContent = "0";
 
+  // Timers
+  let lastTick = 0;
+
+  // Input handling
   document.addEventListener('keydown', (e) => {
-    if (e.key === "ArrowLeft") left = true;
-    if (e.key === "ArrowRight") right = true;
-    if (e.key === "p" || e.key === "P") togglePause();
+    if(e.key === 'ArrowLeft') leftPressed = true;
+    if(e.key === 'ArrowRight') rightPressed = true;
+    if(e.key === 'p' || e.key === 'P') {
+      if(gameState === STATE.PLAYING) pauseGame();
+      else if(gameState === STATE.PAUSED) resumeGame();
+    }
+    if(e.key === 'Enter') { if(gameState === STATE.MENU) startGame(); }
   });
   document.addEventListener('keyup', (e) => {
-    if (e.key === "ArrowLeft") left = false;
-    if (e.key === "ArrowRight") right = false;
+    if(e.key === 'ArrowLeft') leftPressed = false;
+    if(e.key === 'ArrowRight') rightPressed = false;
   });
 
-  startBtn.addEventListener('click', () => {
-    startGame();
+  // Buttons
+  startBtn.addEventListener('click', ()=> startGame());
+  pauseBtn.addEventListener('click', ()=> {
+    if(gameState === STATE.PLAYING) pauseGame(); else if(gameState === STATE.PAUSED) resumeGame();
   });
-  pauseBtn.addEventListener('click', () => {
-    togglePause();
-  });
+
+  // spawn helpers
+  function spawnSnowflake(){
+    snowflakes.push({ x: Math.random()*(W-20)+10, y:-10, r: Math.random()*6+3, spd: Math.random()*2+1 });
+  }
+  function spawnObstacle(){
+    const w = Math.random()*60 + 30;
+    obstacles.push({ x: Math.random()*(W-w), y:-20, w: w, h:14, spd: 2 + Math.random()*1.6 });
+  }
+
+  // spawn intervals (use timers)
+  let snowInterval = null;
+  let obsInterval = null;
+
+  function startSpawns(){
+    stopSpawns();
+    snowInterval = setInterval(()=>{ if(gameState===STATE.PLAYING) if(Math.random()<0.6) spawnSnowflake(); }, 220);
+    obsInterval = setInterval(()=>{ if(gameState===STATE.PLAYING) if(Math.random()<0.35) spawnObstacle(); }, 520);
+  }
+  function stopSpawns(){
+    if(snowInterval) { clearInterval(snowInterval); snowInterval = null; }
+    if(obsInterval) { clearInterval(obsInterval); obsInterval = null; }
+  }
+
+  // collisions
+  function circleRectCollision(cx, cy, r, rx, ry, rw, rh){
+    const closestX = Math.max(rx, Math.min(cx, rx + rw));
+    const closestY = Math.max(ry, Math.min(cy, ry + rh));
+    const dx = cx - closestX, dy = cy - closestY;
+    return (dx*dx + dy*dy) < (r*r);
+  }
+
+  // game control functions
+  function resetGame(){
+    penguinX = W/2;
+    snowflakes = [];
+    obstacles = [];
+    score = 0;
+    scoreDisplay.textContent = "0";
+  }
 
   function startGame(){
-    penguinX = W/2; score = 0; snowflakes = []; obstacles = []; gameRunning = true; gamePaused = false; scoreDisplay.textContent = "0"; status("");
-    requestAnimationFrame(loop);
-  }
-  function togglePause(){
-    if(!gameRunning) return;
-    gamePaused = !gamePaused;
-    pauseBtn.textContent = gamePaused ? "Resume (P)" : "Pause (P)";
-    if(!gamePaused) requestAnimationFrame(loop);
-  }
-
-  function spawnSnow(){
-    snowflakes.push({ x: Math.random()*(W-10)+5, y:-10, r: Math.random()*5+3, spd: Math.random()*2+1 });
-  }
-  function spawnObs(){
-    const w = Math.random()*60+30;
-    obstacles.push({ x: Math.random()*(W-w), y:-20, w: w, h:14, spd: 2+Math.random()*1.5 });
-  }
-
-  setInterval(()=> { if(gameRunning && !gamePaused) if(Math.random()<0.04) spawnSnow(); }, 400);
-  setInterval(()=> { if(gameRunning && !gamePaused) if(Math.random()<0.02) spawnObs(); }, 500);
-
-  function loop(){
-    if(!gameRunning || gamePaused) return;
-    update();
-    draw();
+    resetGame();
+    gameState = STATE.PLAYING;
+    startSpawns();
+    lastTick = performance.now();
     requestAnimationFrame(loop);
   }
 
-  function update(){
-    // movement
-    if(left) penguinX -= 5;
-    if(right) penguinX += 5;
-    penguinX = Math.max(penguinR, Math.min(W-penguinR, penguinX));
+  function pauseGame(){
+    if(gameState !== STATE.PLAYING) return;
+    gameState = STATE.PAUSED;
+    pauseBtn.textContent = "Resume (P)";
+  }
 
-    // update snow
-    for(let i=snowflakes.length-1;i>=0;i--){
+  function resumeGame(){
+    if(gameState !== STATE.PAUSED) return;
+    gameState = STATE.PLAYING;
+    pauseBtn.textContent = "Pause (P)";
+    lastTick = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  function endGame(){
+    gameState = STATE.GAMEOVER;
+    stopSpawns();
+    // show Game Over overlay via simple alert or a modal — keep minimal
+    setTimeout(()=> {
+      const retry = confirm("GAME OVER\nYour score: " + score + "\n\nRetry?");
+      if(retry) startGame(); else { gameState = STATE.MENU; drawMenu(); }
+    }, 100);
+  }
+
+  // update + draw
+  function update(dt){
+    if(gameState !== STATE.PLAYING) return;
+
+    // player movement
+    if(leftPressed) penguinX -= speed;
+    if(rightPressed) penguinX += speed;
+    penguinX = Math.max(penguinR, Math.min(W - penguinR, penguinX));
+
+    // update snowflakes
+    for(let i = snowflakes.length - 1; i >= 0; i--){
       const s = snowflakes[i];
       s.y += s.spd;
-      // collision
+      // collision with penguin — but if touching obstacle, do not collect
       const dx = s.x - penguinX, dy = s.y - penguinY;
       const dist = Math.sqrt(dx*dx + dy*dy);
       const touchingObstacle = obstacles.some(o => circleRectCollision(penguinX, penguinY, penguinR, o.x, o.y, o.w, o.h));
@@ -232,72 +191,77 @@
         snowflakes.splice(i,1);
         score++;
         scoreDisplay.textContent = String(score);
-      } else if (s.y > H+20) snowflakes.splice(i,1);
+        continue;
+      }
+      if(s.y > H + 20) snowflakes.splice(i,1);
     }
 
     // update obstacles
-    for(let i=obstacles.length-1;i>=0;i--){
+    for(let i = obstacles.length - 1; i >= 0; i--){
       const o = obstacles[i];
       o.y += o.spd;
       if(circleRectCollision(penguinX, penguinY, penguinR, o.x, o.y, o.w, o.h)){
-        // game over
-        gameRunning = false;
-        status("Game Over. Your score: " + score + ". Submitting...");
-        // try submit score on-chain (ask user to connect if needed)
-        setTimeout(()=> submitScoreOnChain(score), 200); // small delay so user sees message
+        endGame();
         return;
       }
-      if(o.y > H+40) obstacles.splice(i,1);
+      if(o.y > H + 40) obstacles.splice(i,1);
     }
   }
 
   function draw(){
+    // clear
     ctx.clearRect(0,0,W,H);
-    // background subtle
-    ctx.fillStyle = '#00334d'; ctx.fillRect(0,0,W,H);
+    // background
+    ctx.fillStyle = '#03344a'; ctx.fillRect(0,0,W,H);
 
-    // snowflakes
+    // draw snowflakes
     ctx.fillStyle = '#ffffff';
-    for(const s of snowflakes){ ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); }
+    for(const s of snowflakes){
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
+    }
 
-    // obstacles
-    for(const o of obstacles){ ctx.fillStyle = '#00eaff'; ctx.fillRect(o.x, o.y, o.w, o.h); }
+    // draw obstacles
+    for(const o of obstacles){
+      ctx.fillStyle = '#00eaff'; ctx.fillRect(o.x, o.y, o.w, o.h);
+      ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(o.x+2, o.y+2, Math.min(8,o.w-4), o.h/2);
+    }
 
-    // penguin (simple)
+    // draw penguin
+    // body
     ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(penguinX, penguinY, penguinR, penguinR+6, 0, 0, Math.PI*2); ctx.fill();
+    // belly
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(penguinX, penguinY+5, penguinR*0.6, penguinR*0.5, 0, 0, Math.PI*2); ctx.fill();
-    // eyes
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6, 4,0,Math.PI*2); ctx.arc(penguinX+6, penguinY-6, 4,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6,2,0,Math.PI*2); ctx.arc(penguinX+6, penguinY-6,2,0,Math.PI*2); ctx.fill();
+    // eyes (honest look)
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6, 4, 0, Math.PI*2); ctx.arc(penguinX+6, penguinY-6, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(penguinX-6, penguinY-6, 2, 0, Math.PI*2); ctx.arc(penguinX+6, penguinY-6, 2, 0, Math.PI*2); ctx.fill();
   }
 
-  // helper collision
-  function circleRectCollision(cx, cy, r, rx, ry, rw, rh){
-    const closestX = Math.max(rx, Math.min(cx, rx+rw));
-    const closestY = Math.max(ry, Math.min(cy, ry+rh));
-    const dx = cx - closestX; const dy = cy - closestY;
-    return (dx*dx + dy*dy) < (r*r);
-  }
-
-  // initial render
-  (function init(){
+  function loop(ts){
+    const dt = ts - lastTick;
+    lastTick = ts;
+    update(dt);
     draw();
-    status("Press Start to play. Use ← →. Press Connect Wallet to submit score.");
-  })();
+    if(gameState === STATE.PLAYING){
+      requestAnimationFrame(loop);
+    }
+  }
 
-  // Auto attempt to show leaderboard if contract is public-readable (no wallet)
-  (async function tryAutoLoadLB(){
-    try {
-      // try using window.ethereum silently
-      if(window.ethereum){
-        const tempProvider = new ethers.providers.Web3Provider(window.ethereum);
-        const tempContract = new ethers.Contract(CONTRACT_ADDRESS, ABI, tempProvider);
-        const res = await tempContract.getLeaderboard();
-        renderLeaderboard(res);
-      }
-    } catch(e){}
-  })();
+  // initial menu draw
+  function drawMenu(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#032b3e'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle = '#ffffff'; ctx.font = '24px Inter, Arial'; ctx.textAlign = 'center';
+    ctx.fillText('Ice Slide Penguin', W/2, 160);
+    ctx.font = '14px Inter, Arial';
+    ctx.fillText('Collect snowflakes • Avoid ice blocks', W/2, 200);
+    ctx.fillText('Use ← → to move • Press Start to play', W/2, 230);
+    ctx.textAlign = 'left';
+  }
 
+  // initial state
+  drawMenu();
+
+  // helpful: init spawn timers only when game runs; cleared on endGame
   </script>
 </body>
 </html>
